@@ -22,8 +22,8 @@ treatment_assign <- read_dta("data/treatment_assignment.dta")
 
 ```{r data-manipulation}
 # merging the three datasets together using household_ID
-data <- left_join(outcomes, background_var, by = "household_ID")
-data <- left_join(data, treatment_assign, by ="household_ID")
+data <- left_join(outcomes, background_var, by = "household_ID") |> 
+  left_join(treatment_assign, by ="household_ID")
 ```
 
 ```{r balance-check}
@@ -37,25 +37,33 @@ balance_check <- background_var |>
   select(-household_ID) |>
   pivot_longer(cols = "origin_forecast_kravg30_p25" : "college_plus", 
                names_to = "Background_variables", 
-               values_to = "Values")
+               values_to = "Values") 
+
+# checking whether the mean difference in background variables between treatment and control groups are statistically significant
+sig_test <- balance_check |>
+  group_by(Background_variables) |>
+  summarize(p_value = t.test(Values ~ treatment_group)$p.value)
 
 # tidying and manipulating the data to display balance check table
 balance_check_tidy <- balance_check |>
   group_by(treatment_group, Background_variables) |>
-  summarize (across(everything(), list(N = ~n(),
-                                       Mean = ~mean(., na.rm = TRUE), 
-                                       sd = ~sd(., na.rm = TRUE))))|>
-  pivot_wider(names_from = treatment_group, values_from = c("Values_N", "Values_Mean", "Values_sd")) |>
+  summarize(across(everything(), list(N = ~n(),
+                                      Mean = ~mean(., na.rm = TRUE), 
+                                      sd = ~sd(., na.rm = TRUE)))) |>
+  pivot_wider(names_from = treatment_group, 
+              values_from = c("Values_N", "Values_Mean", "Values_sd")) |>
   select(Background_variables, 
          Values_N_0, Values_Mean_0, Values_sd_0,
-         Values_N_1,Values_Mean_1, Values_sd_1)
+         Values_N_1,Values_Mean_1, Values_sd_1) |>
+  left_join(sig_test, by = "Background_variables")
 
 # creating a balance check table 
 background_table <- balance_check_tidy |>
   kable(digits = 2, 
-        col.names = c("Background Variables", "N", "Mean", "S.D", "N", "Mean", "S.D")) |>
+        col.names = c("Background Variables", "N", "Mean", "S.D", 
+                      "N", "Mean", "S.D", " ")) |>
   kable_styling(full_width = FALSE) |>
-  add_header_above(c(" " = 1, "Control" = 3, "Treatment" = 3))
+  add_header_above(c(" " = 1, "Control" = 3, "Treatment" = 3, "P Values (T- C)"))
 
 background_table
 ```
@@ -82,7 +90,7 @@ estimates_itt <- summary(itt_high_opp) |>
   round(2)
 
 # estimating itt with background variables
-itt_high_opp_background <- lm(leased_up_opp ~ treatment_group +
+itt_high_opp_background <- lm(leased_up_opp ~ treatment_group + 
                                 origin_forecast_kravg30_p25 +
                                 hoh_age + child_count + child_age +
                                 speaks_english + born_abroad + working +
@@ -90,7 +98,7 @@ itt_high_opp_background <- lm(leased_up_opp ~ treatment_group +
                                 black+ white + asian + latino + race_other +
                                 less_hs + college_plus, data = data)
 
-summary (itt_high_opp_background)
+summary(itt_high_opp_background)
 
 # extracting the estimates 
 estimates_itt_background <- summary(itt_high_opp_background) |>
